@@ -207,7 +207,8 @@ Zygote进程mian方法主要执行逻辑：
 
 - fork出SystemServer进程之后，关闭socket连接；
 
-面试问题总结：
+###面试问题总结：
+
 1.init进程是什么？
 
 Android是基于linux系统的，手机开机之后，linux内核进行加载。加载完成之后会启动init进程。
