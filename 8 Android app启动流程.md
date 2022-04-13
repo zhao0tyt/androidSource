@@ -13,6 +13,35 @@ init进程  --> Zygote进程 --> SystemServer进程 -->各种应用进程
 ### Zygote进程启动流程
 
 init进程会解析配置文件init.rc，来启动一些需要在开机时就启动的系统进程，如Zygote进程、ServiceManager进程等。
+
+```
+static void LoadBootScripts(ActionManager& action_manager, ServiceList& service_list) {
+    Parser parser = CreateParser(action_manager, service_list);
+
+    std::string bootscript = GetProperty("ro.boot.init_rc", "");
+    if (bootscript.empty()) {
+        parser.ParseConfig("/system/etc/init/hw/init.rc");//解析init.rc
+        if (!parser.ParseConfig("/system/etc/init")) {
+            late_import_paths.emplace_back("/system/etc/init");
+        }
+        // late_import is available only in Q and earlier release. As we don't
+        // have system_ext in those versions, skip late_import for system_ext.
+        parser.ParseConfig("/system_ext/etc/init");
+        if (!parser.ParseConfig("/product/etc/init")) {
+            late_import_paths.emplace_back("/product/etc/init");
+        }
+        if (!parser.ParseConfig("/odm/etc/init")) {
+            late_import_paths.emplace_back("/odm/etc/init");
+        }
+        if (!parser.ParseConfig("/vendor/etc/init")) {
+            late_import_paths.emplace_back("/vendor/etc/init");
+        }
+    } else {
+        parser.ParseConfig(bootscript);
+    }
+}
+```
+
 init.rc是由Android初始化语言编写的脚本配置。由于Android 5.0开始支持了64bit程序，在init.rc里改成了通过${ro.zygote}的值来引入Zygote相关的配置
 /system/core/rootdir/init.rc
 
@@ -39,6 +68,171 @@ on zygote-start && property:ro.crypto.state=unencrypted
 
 4.init.zygote64_32.rc，会启动两个Zygote进程，有两个执行程序，64为主模式
 
+下面我们看一下init.zygote32.rc
+
+```
+service zygote /system/bin/app_process -Xzygote /system/bin --zygote --start-system-server
+        class main
+        priority -20
+        user root
+        group root readproc reserved_disk
+        socket zygote stream 660 root system
+...
+
+```
+第一行中，service表示Zygote进程以服务的形式来启动，zygote则是进程的名字，/system/bin/app_process是执行程序的路径，后面几项则是传给执行程序的参数，其中--start-system-server表示在Zygote进程启动后需要启动SystemServer进程。
+然后是最后一行，Zygote进程是使用socket来进行跨进程通信的，所以会创建一个名为zygote的socket，660表示访问权限rw-rw----，表示文件拥有者和同一群组用户具有读写权限。
+
+之后会执行到/frameworks/base/cmds/app_process/app_main.cpp 源码文件中的 main 方法
+
+```
+     if (zygote) {
+        runtime.start("com.android.internal.os.ZygoteInit", args, zygote);//启动Zygote，进入ZygoteInit.main函数
+     } else if (className) {
+        runtime.start("com.android.internal.os.RuntimeInit", args, zygote);
+     } else {
+        fprintf(stderr, "Error: no class name or --zygote supplied.\n");
+        app_usage();
+        LOG_ALWAYS_FATAL("app_process: no class name or --zygote supplied.");
+    }
+
+```
+再看一下AndroidRuntime.cpp的start方法
+frameworks/base/core/jni/AndroidRuntime.cpp
+
+```
+void AndroidRuntime::start(const char* className, const Vector<String8>& options, bool zygote)
+{
+    ALOGD(">>>>>> START %s uid %d <<<<<<\n",
+            className != NULL ? className : "(unknown)", getuid());
+
+    static const String8 startSystemServer("start-system-server");
+    // Whether this is the primary zygote, meaning the zygote which will fork system server.
+    bool primary_zygote = false;
+
+    /*
+     * 'startSystemServer == true' means runtime is obsolete and not run from
+     * init.rc anymore, so we print out the boot start event here.
+     */
+    for (size_t i = 0; i < options.size(); ++i) {
+        if (options[i] == startSystemServer) {
+            primary_zygote = true;
+           /* track our progress through the boot sequence */
+           const int LOG_BOOT_PROGRESS_START = 3000;
+           LOG_EVENT_LONG(LOG_BOOT_PROGRESS_START,  ns2ms(systemTime(SYSTEM_TIME_MONOTONIC)));
+        }
+    }
+
+    const char* rootDir = getenv("ANDROID_ROOT");
+    if (rootDir == NULL) {
+        rootDir = "/system";
+        if (!hasDir("/system")) {
+            LOG_FATAL("No root directory specified, and /system does not exist.");
+            return;
+        }
+        setenv("ANDROID_ROOT", rootDir, 1);
+    }
+
+    const char* artRootDir = getenv("ANDROID_ART_ROOT");
+    if (artRootDir == NULL) {
+        LOG_FATAL("No ART directory specified with ANDROID_ART_ROOT environment variable.");
+        return;
+    }
+
+    const char* i18nRootDir = getenv("ANDROID_I18N_ROOT");
+    if (i18nRootDir == NULL) {
+        LOG_FATAL("No runtime directory specified with ANDROID_I18N_ROOT environment variable.");
+        return;
+    }
+
+    const char* tzdataRootDir = getenv("ANDROID_TZDATA_ROOT");
+    if (tzdataRootDir == NULL) {
+        LOG_FATAL("No tz data directory specified with ANDROID_TZDATA_ROOT environment variable.");
+        return;
+    }
+
+    //const char* kernelHack = getenv("LD_ASSUME_KERNEL");
+    //ALOGD("Found LD_ASSUME_KERNEL='%s'\n", kernelHack);
+
+    /* start the virtual machine */
+    JniInvocation jni_invocation;
+    jni_invocation.Init(NULL);//加载libart.so 
+    JNIEnv* env;
+    if (startVm(&mJavaVM, &env, zygote, primary_zygote) != 0) {
+        return;
+    }
+    onVmCreated(env);
+
+    /*
+     * Register android functions.
+     */
+    if (startReg(env) < 0) {
+        ALOGE("Unable to register all android natives\n");
+        return;
+    }
+
+    /*
+     * We want to call main() with a String array with arguments in it.
+     * At present we have two arguments, the class name and an option string.
+     * Create an array to hold them.
+     */
+    jclass stringClass;
+    jobjectArray strArray;
+    jstring classNameStr;
+
+    stringClass = env->FindClass("java/lang/String");
+    assert(stringClass != NULL);
+    strArray = env->NewObjectArray(options.size() + 1, stringClass, NULL);
+    assert(strArray != NULL);
+    classNameStr = env->NewStringUTF(className);
+    assert(classNameStr != NULL);
+    env->SetObjectArrayElement(strArray, 0, classNameStr);
+
+    for (size_t i = 0; i < options.size(); ++i) {
+        jstring optionsStr = env->NewStringUTF(options.itemAt(i).string());
+        assert(optionsStr != NULL);
+        env->SetObjectArrayElement(strArray, i + 1, optionsStr);
+    }
+
+    /*
+     * Start VM.  This thread becomes the main thread of the VM, and will
+     * not return until the VM exits.
+     */
+    char* slashClassName = toSlashClassName(className != NULL ? className : "");
+    jclass startClass = env->FindClass(slashClassName);
+    if (startClass == NULL) {
+        ALOGE("JavaVM unable to locate class '%s'\n", slashClassName);
+        /* keep going */
+    } else {
+        jmethodID startMeth = env->GetStaticMethodID(startClass, "main",
+            "([Ljava/lang/String;)V");
+        if (startMeth == NULL) {
+            ALOGE("JavaVM unable to find main() in '%s'\n", className);
+            /* keep going */
+        } else {
+            env->CallStaticVoidMethod(startClass, startMeth, strArray);
+
+#if 0
+            if (env->ExceptionCheck())
+                threadExitUncaughtException(env);
+#endif
+        }
+    }
+    free(slashClassName);
+
+    ALOGD("Shutting down VM\n");
+    if (mJavaVM->DetachCurrentThread() != JNI_OK)
+        ALOGW("Warning: unable to detach main thread\n");
+    if (mJavaVM->DestroyJavaVM() != 0)
+        ALOGW("Warning: VM did not shut down cleanly\n");
+}
+```
+1.加载libart.so，否则不能启动虚拟机；2.启动虚拟机；3.加载注册JNI方法；4.根据传递给start方法的第一个参数，去寻找ZygoteInit类，找到类之后，找到该类的main方法，然后调用，在这之后就进入了Java的世界。start方法的第一个参数为"com.android.internal.os.ZygoteInit"，然后通过FindClass方法找到ZygoteInit类，然后再调用相应的main方法进入到Java世界。
+
+
+### SystemServer进程启动流程
+
+frameworks/base/core/java/com/android/internal/os/ZygoteInit.java
 
 ```
 public static void main(String argv[]) {
