@@ -2,17 +2,43 @@
 
 init进程  --> Zygote进程 --> SystemServer进程 -->各种应用进程
 
-- init进程：linux的根进程，android系统是基于linux系统的，因此可以算作是整个android操作系统的第一个进程；
+- init进程：linux的根进程，android系统是基于linux系统的，因此可以算作是整个android操作系统的第一个进程；init进程是Linux内核启动完成后在用户空间启动的第一个进程，主要负责初始化工作、启动属性服务、解析init.rc文件并启动Zygote进程。
 
-- Zygote进程：android系统的根进程，主要作用：可以作用Zygote进程fork出SystemServer进程和各种应用进程；
+- Zygote进程：android系统的根进程，是一个进程孵化器。主要作用：负责创建虚拟机实例、应用程序进程、系统服务进程SystemServer。他通过fork（复制进程）的方式创建子进程，子进程能继承父进程的系统资源如常用类、注册的JNI函数、主题资源、共享库等。
 
-- SystemService进程：主要是在这个进程中启动系统的各项服务，比如ActivityManagerService，PackageManagerService，WindowManagerService服务等等；
+- SystemServer进程：主要是在这个进程中启动系统的各项服务，比如ActivityManagerService，PackageManagerService，WindowManagerService服务等等；
 
 - 各种应用进程：启动自己编写的客户端应用时，一般都是重新启动一个应用进程，有自己的虚拟机与运行环境；
 
-本文主要介绍一下Zygote进程的启动流程，关于SystenServer进程和各种应用进程的启动方式会在以后的文章中介绍。
+### Zygote进程启动流程
 
-init进程在启动Zygote进程时一般都会调用ZygoteInit类的main方法，因此我们这里看一下该方法的具体实现(基于android-11源码)；
+init进程会解析配置文件init.rc，来启动一些需要在开机时就启动的系统进程，如Zygote进程、ServiceManager进程等。
+init.rc是由Android初始化语言编写的脚本配置。由于Android 5.0开始支持了64bit程序，在init.rc里改成了通过${ro.zygote}的值来引入Zygote相关的配置
+/system/core/rootdir/init.rc
+
+```
+import /system/etc/init/hw/init.${ro.zygote}.rc
+...
+# It is recommended to put unnecessary data/ initialization from post-fs-data
+# to start-zygote in device's init.rc to unblock zygote start.
+on zygote-start && property:ro.crypto.state=unencrypted
+    # A/B update verifier that marks a successful boot.
+    exec_start update_verifier_nonencrypted
+    start statsd
+    start netd
+    start zygote
+    start zygote_secondary
+```
+- 调用start zygote会执行init.${ro.zygote}.rc文件，${ro.zygote}的取值有4种，在init.rc的同级目录/system/core/rootdir下，可以看到4个Zygote相关的配置文件，表示系统所支持程序的bit位数：
+
+1.init.zygote32.rc，Zygote进程的执行程序路径为/system/bin/app_process
+
+2.init.zygote64.rc，Zygote进程的执行程序路径为/system/bin/app_process64
+
+3.init.zygote32_64.rc，会启动两个Zygote进程，有两个执行程序，32为主模式
+
+4.init.zygote64_32.rc，会启动两个Zygote进程，有两个执行程序，64为主模式
+
 
 ```
 public static void main(String argv[]) {
