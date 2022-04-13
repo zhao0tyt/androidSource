@@ -223,6 +223,14 @@ init进程会启动ServiceManager，孵化一些守护进程，并解析init.rc�
 
 每个应用程序都是运行在各自的Dalvik虚拟机中，应用程序每次运行都要重新初始化和启动虚拟机，这个过程会耗费很长时间。Zygote会把已经运行的虚拟机的代码和内存信息共享，起到一个预加载资源和类的作用，从而缩短启动时间。
 
+4.为什么SystemServer进程与Zygote进程通讯采用Socket而不是Binder？
+
+Binder通讯是需要多线程操作的，代理对象对Binder的调用是在Binder线程，需要再通过Handler调用主线程来操作。
+
+比如AMS与应用进程通讯，AMS的本地代理IApplicationThread通过调用ScheduleLaunchActivity，调用到的应用进程ApplicationThread的ScheduleLaunchActivity是在Binder线程，需要再把参数封装为一个ActivityClientRecord，sendMessage发送给H类（主线程Handler，ActivityThread内部类
+
+可能父进程（如zygote）binder线程有锁，然后子进程的主线程一直在等其子线程(从父进程拷贝过来的子进程)的资源，但是其实父进程的子进程并没有被拷贝过来，造成死锁，所以fork不允许存在多线程。而非常巧的是Binder通讯偏偏就是多线程，所以干脆父进程（Zgote）这个时候就不使用binder线程。
+
 另外对android源码解析方法感兴趣的可参考我的：
 <br><a href="http://blog.csdn.net/qq_23547831/article/details/50634435"> android源码解析之（一）-->android项目构建过程</a>
 <br><a href="http://blog.csdn.net/qq_23547831/article/details/50751687">android源码解析之（二）-->异步消息机制</a>
