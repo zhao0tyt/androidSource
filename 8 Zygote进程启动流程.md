@@ -207,6 +207,21 @@ Zygote进程mian方法主要执行逻辑：
 
 - fork出SystemServer进程之后，关闭socket连接；
 
+面试问题总结：
+1.init进程是什么？
+
+Android是基于linux系统的，手机开机之后，linux内核进行加载。加载完成之后会启动init进程。
+
+init进程会启动ServiceManager，孵化一些守护进程，并解析init.rc孵化Zygote进程。
+
+2.Zygote进程是什么？
+
+所有的App进程都是由Zygote进程fork生成的，包括SystemServer进程。Zygote初始化后，会注册一个等待接受消息的socket，OS层会采用socket进行IPC通信。
+
+3.为什么是Zygote来孵化进程，而不是新建进程呢？
+
+每个应用程序都是运行在各自的Dalvik虚拟机中，应用程序每次运行都要重新初始化和启动虚拟机，这个过程会耗费很长时间。Zygote会把已经运行的虚拟机的代码和内存信息共享，起到一个预加载资源和类的作用，从而缩短启动时间。
+
 另外对android源码解析方法感兴趣的可参考我的：
 <br><a href="http://blog.csdn.net/qq_23547831/article/details/50634435"> android源码解析之（一）-->android项目构建过程</a>
 <br><a href="http://blog.csdn.net/qq_23547831/article/details/50751687">android源码解析之（二）-->异步消息机制</a>
