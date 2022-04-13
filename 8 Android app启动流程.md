@@ -13,7 +13,7 @@ init进程  --> Zygote进程 --> SystemServer进程 -->各种应用进程
 ### Zygote进程启动流程
 
 init进程会解析配置文件init.rc，来启动一些需要在开机时就启动的系统进程，如Zygote进程、ServiceManager进程等。
-
+ /system/core/init/Init.cpp 
 ```
 static void LoadBootScripts(ActionManager& action_manager, ServiceList& service_list) {
     Parser parser = CreateParser(action_manager, service_list);
