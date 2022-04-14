@@ -18,7 +18,7 @@ init进程  --> Zygote进程 --> SystemServer进程 -->各种应用进程
 
 ### Zygote进程启动流程
 
-init进程会解析配置文件init.rc，来启动一些需要在开机时就启动的系统进程，如Zygote进程、ServiceManager进程等。
+init进程会解析配置文件init.rc，来启动一些需要在开机时就启动的系统进程，如Zygote进程、ServiceManager进程(client 与 service 通信管理的服务)等。
  /system/core/init/Init.cpp 
 ```
 static void LoadBootScripts(ActionManager& action_manager, ServiceList& service_list) {
@@ -780,8 +780,11 @@ frameworks/base/services/java/com/android/server/SystemServer.java
         // Start services.
         try {
             t.traceBegin("StartServices");
+            //启动引导服务，如AMS、PMS等
             startBootstrapServices(t);
+            //启动核心服务
             startCoreServices(t);
+            //启动其他服务
             startOtherServices(t);
         } catch (Throwable ex) {
             Slog.e("System", "******************************************");
@@ -835,6 +838,11 @@ SystemServer.main() 方法中创建了 SystemServer 实例，并调用了其 run
 至此，system server 进程的启动流程就结束了。
 
 
+### Launcher的启动
+Launcher作为Android的桌面，用于管理应用图标和桌面组件。  
+前边可知SystemServer进程会启动各种服务，其中PackageManagerService启动后会将系统中的应用程序安装完成，然后由AMS来启动Launcher。
+详细流程参见博客
+https://blog.csdn.net/baidu_33321081/article/details/123224778
 
 ### 面试问题总结：
 
