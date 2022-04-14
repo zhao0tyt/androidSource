@@ -21,9 +21,6 @@ init进程  --> Zygote进程 --> SystemServer进程 -->各种应用进程
  /system/core/init/main.cpp
  ![QQ图片20220414094719](https://user-images.githubusercontent.com/19584600/163298178-3803635b-f44c-47b0-b714-683e764794ad.png)
  
-### 总结
-![bda7e8226c6a48e682ebfa32227b1d06](https://user-images.githubusercontent.com/19584600/163327598-0f7ef89a-4901-4fee-95e1-193ea651a88d.jpeg)
-
 
 
 ### Zygote进程启动流程
@@ -855,6 +852,9 @@ Launcher作为Android的桌面，用于管理应用图标和桌面组件。
 前边可知SystemServer进程会启动各种服务，其中PackageManagerService启动后会将系统中的应用程序安装完成，然后由AMS来启动Launcher。
 详细流程参见博客
 https://blog.csdn.net/baidu_33321081/article/details/123224778
+
+### 总结
+![bda7e8226c6a48e682ebfa32227b1d06](https://user-images.githubusercontent.com/19584600/163327598-0f7ef89a-4901-4fee-95e1-193ea651a88d.jpeg)
 
 ### 面试问题总结：
 
