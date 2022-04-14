@@ -10,6 +10,12 @@ init进程  --> Zygote进程 --> SystemServer进程 -->各种应用进程
 
 - 各种应用进程：启动自己编写的客户端应用时，一般都是重新启动一个应用进程，有自己的虚拟机与运行环境；
 
+### init进程启动流程
+
+ /system/core/init/main.cpp
+ ![QQ图片20220414094719](https://user-images.githubusercontent.com/19584600/163298178-3803635b-f44c-47b0-b714-683e764794ad.png)
+
+
 ### Zygote进程启动流程
 
 init进程会解析配置文件init.rc，来启动一些需要在开机时就启动的系统进程，如Zygote进程、ServiceManager进程等。
